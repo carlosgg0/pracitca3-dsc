@@ -8,6 +8,8 @@ import signal
 from kazoo.client import KazooClient
 from kazoo.recipe.election import Election
 from kazoo.recipe.watchers import DataWatch, ChildrenWatch
+from kazoo.recipe.barrier import Barrier
+from kazoo.recipe.counter import Counter
 from kazoo.exceptions import NoNodeError, ZookeeperError, NodeExistsError, ConnectionClosedError
 
 
@@ -71,9 +73,19 @@ def leader_func(id: int, client: KazooClient):
 
     # Watch for creations/deletions of nodes under "/mediciones"
     ChildrenWatch(client, "/mediciones", watch_devices)
+    
+    barrier = Barrier(client, "/barrier")
 
     while True:
         print(f"I'm the leader: (id = {id})")
+        
+        try:
+            barrier.create()
+        except (ZookeeperError, ConnectionClosedError):
+            pass
+
+        time.sleep(SAMPLING_PERIOD)
+
         try:
             children = client.get_children("/mediciones")
         except ConnectionClosedError:
@@ -100,7 +112,12 @@ def leader_func(id: int, client: KazooClient):
             except requests.RequestException as e:
                 print(f"ERROR: Failed to contact API: {e}")
 
-        time.sleep(SAMPLING_PERIOD)
+        try:
+            barrier.remove()
+        except (NoNodeError, ZookeeperError):
+            pass
+        except ConnectionClosedError:
+            break
 
 
 def generate_random_measures(id: int, client: KazooClient):
@@ -110,6 +127,9 @@ def generate_random_measures(id: int, client: KazooClient):
         id (int): id of the process running this function
         client (KazooClient): client used to connect to Zookeeper
     """
+    barrier = Barrier(client, "/barrier")
+    counter = Counter(client, "/counter")
+
     while True:
         value = random.randint(75, 85)
         path = f"/mediciones/{id}"
@@ -120,9 +140,20 @@ def generate_random_measures(id: int, client: KazooClient):
             except NodeExistsError:
                 client.set(path, str(value).encode('utf-8'))
         except ConnectionClosedError:
+            # If the connection has been closed (process interrupted)
+            # then just stop generating measures
             break
 
-        time.sleep(SAMPLING_PERIOD)
+        try:
+            counter += 1
+            print(f"Counter: {counter.value}")
+        except (ZookeeperError, ConnectionClosedError):
+            pass
+
+        try:
+            barrier.wait()
+        except (ConnectionClosedError, ZookeeperError):
+            break
 
 
 

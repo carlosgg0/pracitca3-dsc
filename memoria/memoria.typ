@@ -131,3 +131,28 @@ Esta nueva configuración lleva al sistema a un estado de error, puesto que la A
     Funcionamiento de ChildrenWatch
   ]
 ) <watchers2>
+
+= Sincronización Avanzada
+En esta iteración sobre el diseño del sistema, se ha modificado la arquitectura para utilizar primitivas de sincronización más avanzadas, sustituyendo los temporizadores locales independientes por una coordinación centralizada mediante barreras.
+
+== Barreras (`Barrier`)
+Se ha implementado una barrera simple `/barrier` para sincronizar el ciclo de medición de todos los dispositivos:
+- *Dispositivos*: Tras enviar su medición, se quedan bloqueados esperando en la barrera `barrier.wait()` en lugar de esperar el tiempo `SAMPLING_PERIOD`.
+- *Líder*: Es el encargado de controlar el ritmo. Crea la barrera al inicio del ciclo, espera el tiempo de muestreo `SAMPLING_PERIOD`, procesa los datos y finalmente elimina la barrera `barrier.remove()`, liberando a todos los dispositivos simultáneamente para la siguiente iteración.
+
+Esto garantiza que el procesamiento del líder ocurra mientras los dispositivos están en espera, y que todos comiencen el siguiente ciclo a la vez.
+
+== Contador Distribuido (`Counter`)
+Adicionalmente, se ha incorporado un contador distribuido `/counter` para llevar un registro global del número de mediciones realizadas por el clúster. Cada dispositivo incrementa este contador atómicamente `counter += 1` antes de esperar en la barrera.
+
+Cabe destacar que, aunque el incremento en ZooKeeper es atómico y consistente, la impresión por pantalla del valor puede mostrar condiciones de carrera visuales (varios nodos imprimiendo el mismo número). Este problema se podría solucionar fácilmente adquiriendo un *lock* y no soltarlo hasta que se imprima el valor.  
+
+En la siguiente imagen @counter, se muestra un ejemplo en el que se puede apreciar cómo ambos procesos incrementan el contador. El sistema sigue siendo tolerante a fallos de los nodos pues la elección automática de líder sigue funcionando correctamente.
+
+#figure(
+  image("images/counter-example.png"),
+  caption: [
+    Funcionamiento del contador
+  ]
+) <counter>
+
