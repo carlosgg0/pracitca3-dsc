@@ -10,13 +10,13 @@ from kazoo.recipe.election import Election
 from kazoo.exceptions import NoNodeError, ZookeeperError, NodeExistsError
 
 
-# Client is declared globally so that the interrupt_handler can stop it
+# Client is declared globally so that interrupt_handler can stop it
 client = None
 
+
 def interrupt_handler(signal, frame):
-    if client:
-        client.stop()
-    exit(0)
+    print("\nInterrupt received")
+    sys.exit(0)
 
 signal.signal(signal.SIGINT, interrupt_handler)
 
@@ -35,7 +35,6 @@ def leader_func(id: int, client: KazooClient):
         print(f"I'm the leader: (id = {id})")
         children = client.get_children("/mediciones")
         values = []
-        print(f"Measures to compute the mean: /mediciones/{children}")
         for child in children:
             try:
                 data, _ = client.get(f"/mediciones/{child}")
@@ -53,7 +52,7 @@ def leader_func(id: int, client: KazooClient):
             mean = sum(values) / len(values)
             print(f"Media: {mean}")
             try:
-                requests.get("http://127.0.0.1:80/nuevo", params={"dato": mean}, timeout=2)
+                requests.get("http://localhost:8080/nuevo", params={"dato": mean}, timeout=2)
             except requests.RequestException as e:
                 print(f"ERROR: Failed to contact API: {e}")
 
@@ -69,19 +68,20 @@ def generate_random_measures(id: int, client: KazooClient):
     """
     while True:
         value = random.randint(75, 85)
-        path = f"/mediciones/app{id}"
+        path = f"/mediciones/{id}"
+        
         try:
             client.create(path, str(value).encode('utf-8'), ephemeral=True)
         except NodeExistsError:
             client.set(path, str(value).encode('utf-8'))
-        
+
         time.sleep(5)
 
 
 def main():
     argc = len(sys.argv)
     if argc != 2:
-        print("ERROR: Missing app instance id.\nUsage: python3 app.py <id>")
+        print("Usage: python3 app.py <id>")
         sys.exit(1)
 
     id = int(sys.argv[1])
@@ -105,7 +105,6 @@ def main():
     # Vote for a leader among all our app instances
     election = Election(client, "/election", id)
     election.run(leader_func, id, client)
-
 
 
 if __name__ == "__main__":
