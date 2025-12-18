@@ -93,5 +93,41 @@ Para verificar el correcto funcionamiento de nuestra API, podemos usar el navega
 ) <browser-inicial>
 
 = Utilización de Watchers
+En esta fase del desarrollo se han añadido mecanismos de vigilancia (*Watchers*) para dotar al sistema de mayor reactividad y flexibilidad. Se han implementado dos tipos de watchers proporcionados por la librería `kazoo`:
 
-En este apartado
+== Monitorización de Dispositivos (`ChildrenWatch`)
+El líder ahora tiene la responsabilidad de monitorizar la conexión y desconexión de los nodos sensores. Para ello, se utiliza un `ChildrenWatch` sobre la ruta `/mediciones`. Cada vez que un nodo se conecta/desconecta, el líder mostrará todos los nodos que se encuentran conectados en el momento (nodos cuya sesión sigue activa).
+
+=== Ejemplo de monitorización de dispositivos
+Al igual que antes, en @watchers1 se muestra una ejecución que permite ver el funcionamiento de estas nuevas funcionalidades. En este caso podemos ver que al iniciar cada instancia inmediatamente se muestran los valores de `/config/sampling_period` y `/config/api_url`, puesto que este es el funcionamiento por defecto del constructor `DataWatch`, el cual se explicará posteriormente. Además, cuando lanzamos el segundo proceso, el líder lo detecta y muestra por pantalla que efectivamente hay 2 dispositivos conectados. Algo similar ocurre cuando interrumpimos al proceso líder, pues el segundo proceso es escogido como nuevo líder y detecta que ahora ya sólo se encuentra él en el sistema.
+
+#figure(
+  image("images/children-watchers.png"),
+  caption: [
+    Funcionamiento de ChildrenWatch
+  ]
+) <watchers1>
+
+
+== Configuración Distribuida (`DataWatch`)
+Para evitar tener valores de configuración estáticos o depender únicamente de variables de entorno que requieren reinicios para cambiarse, se ha añadido un sistema de configuración distribuida utilizando `DataWatch`.
+
+Se han definido dos rutas en ZooKeeper para almacenar la configuración:
+- `/config/sampling_period`: Controla el tiempo de espera entre mediciones.
+- `/config/api_url`: Define la dirección del servidor al que se envían los datos.
+
+Cada nodo instala un `DataWatch` en estas rutas. Cuando un script externo modifica el valor de estos znodes, la función de callback asociada se ejecuta en todos los nodos, actualizando sus variables globales `SAMPLING_PERIOD` o `API_URL` en tiempo real.
+
+=== Ejemplo de configuración distribuida
+En este ejemplo se utiliza un único proceso y el fichero `src/init_config.py` para cambiar la configuración del sistema. Mientras el proceso se encuentra en ejecución podemos ejecutar el anterior fichero de la siguiente forma: 
+
+```bash python3 src/init_config.py 6 http://localhost:8081/nuevo```
+
+Esta nueva configuración lleva al sistema a un estado de error, puesto que la API escucha peticiones en el puerto 8080. Esta interacción se puede ver en la siguiente @watchers2:
+
+#figure(
+  image("images/data-watchers.png"),
+  caption: [
+    Funcionamiento de ChildrenWatch
+  ]
+) <watchers2>
