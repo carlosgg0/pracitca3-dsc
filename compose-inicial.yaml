@@ -22,10 +22,10 @@ services:
 
 
   zookeeper:
-    image: zookeeper:3.8.0 # Especificar una versión para reproducibilidad
+    image: zookeeper:3.9 
     hostname: zookeeper
     ports:
-      - "2181:2181" # Zookeeper 
+      - "2181:2181" 
     environment: 
       ZOO_STANDALONE_ENABLED: "true"
     networks:

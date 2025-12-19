@@ -156,3 +156,28 @@ En la siguiente imagen @counter, se muestra un ejemplo en el que se puede apreci
   ]
 ) <counter>
 
+= Despliegue con Docker Compose
+Para facilitar el despliegue y la orquestación de los distintos componentes del sistema (ZooKeeper, API y múltiples instancias de la aplicación), se ha creado un fichero `compose-final.yaml` y un `Dockerfile` para la aplicación.
+
+== Dockerfile
+Se ha creado una imagen de Docker basada en `python:3.11-slim`. Caben destacar los siguientes aspectos:
+- Se establece `ENV PYTHONUNBUFFERED=1` para asegurar que los logs de Python aparezcan inmediatamente en la consola de Docker.
+- Se define `ENTRYPOINT ["python", "src/app.py"]` para que el contenedor actúe como un ejecutable de nuestra aplicación, aceptando el ID como argumento.
+
+En la imagen @dockerfile se muestran los contenidos del dockerfile a partir del cual se ha construido la imagen `carlosgg0/practica3`, la cual se encuentra disponible en *Docker Hub*.
+
+#figure(
+  image("images/dockerfile.png", width: 60%),
+  caption: [
+    Contenido de `Dockerfile`
+  ],
+  placement: top
+) <dockerfile>
+
+== Docker Compose
+El fichero de composición define los siguientes servicios:
+- *zookeeper*: Incluye un `healthcheck` utilizando `nc` para asegurar que el puerto 2181 está disponible antes de iniciar las aplicaciones dependientes.
+- *api*: La API REST desarrollada en la práctica anterior.
+- *app1*, *app2*, *app3*: Instancias de la aplicación. Se configuran mediante variables de entorno: `ZOOKEEPER_HOST`, `API_URL`, etc. y se les pasa su ID único como argumento del comando que la ejecutan, `command: ["1"]`.
+
+Gracias a la red interna de Docker, las aplicaciones pueden comunicarse con la API utilizando el nombre del servicio `http://api:80/nuevo` en lugar de `localhost`.
