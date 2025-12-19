@@ -11,6 +11,8 @@
   size: 11pt
 )
 
+#set heading(numbering: "1.")
+
 // Switch to Cascadia Code for both
 // inline and block raw.
 #show raw: set text(font: "Cascadia Mono")
@@ -33,11 +35,17 @@
   #link("mailto:carlosgarciag552@uma.es")
 ]
 
-#set heading(numbering: "1.")
+#figure(
+  image("images/logo-uma.jpeg")
+)
+
+#pagebreak()
 
 //Table of contents
 #outline()
 
+
+#pagebreak()
 = Funcionamiento básico del sistema
 
 Se ha desarrollado una solución en Python `src/app.py` que orquesta un conjunto de nodos sensores coordinados mediante *Apache ZooKeeper*, concretamente a través de la librería `kazoo` disponible para Python.
@@ -89,7 +97,7 @@ Para verificar el correcto funcionamiento de nuestra API, podemos usar el navega
   caption: [
     Listado de las medias
   ],
-  placement: top
+  //placement: top
 ) <browser-inicial>
 
 = Utilización de Watchers
@@ -181,3 +189,28 @@ El fichero de composición define los siguientes servicios:
 - *app1*, *app2*, *app3*: Instancias de la aplicación. Se configuran mediante variables de entorno: `ZOOKEEPER_HOST`, `API_URL`, etc. y se les pasa su ID único como argumento del comando que la ejecutan, `command: ["1"]`.
 
 Gracias a la red interna de Docker, las aplicaciones pueden comunicarse con la API utilizando el nombre del servicio `http://api:80/nuevo` en lugar de `localhost`.
+
+= Despliegue en Clúster de ZooKeeper
+Para simular un entorno de producción real y garantizar alta disponibilidad, se ha desplegado ZooKeeper en modo clúster (ensemble) utilizando 3 nodos (`zookeeper1`, `zookeeper2`, `zookeeper3`).
+
+Se ha adaptado el código de la aplicación para aceptar una cadena de conexión con múltiples hosts (variable de entorno `ZOOKEEPER_HOSTS`), permitiendo a la librería `kazoo` gestionar automáticamente la conexión y reconexión a cualquiera de los nodos disponibles del clúster.
+
+== Pruebas de Tolerancia a Fallos
+Para verificar la robustez del sistema, se han realizado pruebas deteniendo nodos del clúster de ZooKeeper mientras la aplicación estaba en funcionamiento.
+
+=== Estado Inicial
+El sistema arranca correctamente con los 3 nodos de ZooKeeper y las 3 instancias de la aplicación. Se elige un líder y se reportan mediciones.
+
+#figure(
+  image("images/inicio.png"),
+  caption: [
+    Inicio normal del sistema
+  ]
+)
+
+=== Prueba de tolerancia a fallos de infraestructura (zookeeper)
+Se detiene el contenedor que actúa como líder del ensamble de ZooKeeper (verificable con `zkServer.sh status`).
+
+*Resultado deseado*: `kazoo` debería detecta la pérdida de conexión y automáticamente migra la sesión a otro nodo disponible del clúster. La aplicación apenas sufre interrupción y continúa funcionando, demostrando la transparencia del fallo para el cliente.
+
+Sin embargo, cuando se tumba el líder los nodos de nuestra aplicación automáticamente se 

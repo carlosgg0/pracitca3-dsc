@@ -24,7 +24,10 @@ services:
       - "6379:6379"   
 
   app1:
-    image: carlosgg0/practica3
+    # App services could use carlosgg0/practica3:v1
+    # which only supports zookeeper on standalone mode
+    # (not cluster) 
+    image: carlosgg0/practica3:v2 
     command: ["1"]
     environment:
       - ZOOKEEPER_HOST=zookeeper:2181
@@ -37,7 +40,7 @@ services:
         condition: service_started
 
   app2:
-    image: carlosgg0/practica3
+    image: carlosgg0/practica3:v2
     command: ["2"]
     environment:
       - ZOOKEEPER_HOST=zookeeper:2181
@@ -50,7 +53,7 @@ services:
         condition: service_started
 
   app3:
-    image: carlosgg0/practica3
+    image: carlosgg0/practica3:v2
     command: ["3"]
     environment:
       - ZOOKEEPER_HOST=zookeeper:2181

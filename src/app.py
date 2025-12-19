@@ -10,21 +10,20 @@ from kazoo.recipe.election import Election
 from kazoo.recipe.watchers import DataWatch, ChildrenWatch
 from kazoo.recipe.barrier import Barrier
 from kazoo.recipe.counter import Counter
-from kazoo.exceptions import NoNodeError, ZookeeperError, NodeExistsError, ConnectionClosedError
+from kazoo.exceptions import NoNodeError, ZookeeperError, NodeExistsError, ConnectionClosedError, SessionExpiredError
 
 
-ZOOKEEPER_HOST = os.getenv("ZOOKEEPER_HOST", "127.0.0.1:2181")
+
+# Support for both single node (ZOOKEEPER_HOST) and cluster (ZOOKEEPER_HOSTS)
+ZOOKEEPER_HOSTS = os.getenv("ZOOKEEPER_HOSTS", os.getenv("ZOOKEEPER_HOST", "127.0.0.1:2181"))
+
 SAMPLING_PERIOD = int(os.getenv("SAMPLING_PERIOD", 5))
 API_URL = os.getenv("API_URL", "http://localhost:8080/nuevo")
 
-# client is declared global so that the connection 
-# can be stopped properly inside interrupt_handler
-client = None
+
 
 def interrupt_handler(signal, frame):
     print("\nInterrupt received")
-    if client:
-        client.stop()
     sys.exit(0)
 
 signal.signal(signal.SIGINT, interrupt_handler)
@@ -79,21 +78,20 @@ def leader_func(id: int, client: KazooClient):
     while True:
         print(f"I'm the leader: (id = {id})")
         
+        #Create the barrier
         try:
-            barrier.create()
-        except (ZookeeperError, ConnectionClosedError):
+            client.retry(barrier.create)
+        except (NodeExistsError, ZookeeperError):
             pass
 
+        # Wait for devices to write measures
         time.sleep(SAMPLING_PERIOD)
 
-        try:
-            children = client.get_children("/mediciones")
-        except ConnectionClosedError:
-            break
+        children = client.retry(client.get_children, "/mediciones")
         values = []
         for child in children:
             try:
-                data, _ = client.get(f"/mediciones/{child}")
+                data, _ = client.retry(client.get, f"/mediciones/{child}")
                 values.append(float(data.decode('utf-8')))
             except (ValueError, TypeError):
                 print(f"ERROR: Invalid data format in node {child}")
@@ -113,11 +111,9 @@ def leader_func(id: int, client: KazooClient):
                 print(f"ERROR: Failed to contact API: {e}")
 
         try:
-            barrier.remove()
+            client.retry(barrier.remove)
         except (NoNodeError, ZookeeperError):
             pass
-        except ConnectionClosedError:
-            break
 
 
 def generate_random_measures(id: int, client: KazooClient):
@@ -135,26 +131,14 @@ def generate_random_measures(id: int, client: KazooClient):
         path = f"/mediciones/{id}"
         
         try:
-            try:
-                client.create(path, str(value).encode('utf-8'), ephemeral=True)
-            except NodeExistsError:
-                client.set(path, str(value).encode('utf-8'))
-        except ConnectionClosedError:
-            # If the connection has been closed (process interrupted)
-            # then just stop generating measures
-            break
+            client.retry(client.create, path, str(value).encode('utf-8'), ephemeral=True)
+        except NodeExistsError:
+            client.retry(client.set, path, str(value).encode('utf-8'))
 
-        try:
-            counter += 1
-            print(f"Counter: {counter.value}")
-        except (ZookeeperError, ConnectionClosedError):
-            pass
+        counter += 1
+        print(f"Counter: {counter.value}")
 
-        try:
-            barrier.wait()
-        except (ConnectionClosedError, ZookeeperError):
-            break
-
+        barrier.wait()
 
 
 
@@ -167,8 +151,7 @@ def main():
     id = int(sys.argv[1])
 
     # Connect to Zookeeper service
-    global client
-    client = KazooClient(hosts=ZOOKEEPER_HOST)
+    client = KazooClient(hosts=ZOOKEEPER_HOSTS)
     client.start()
     
     
@@ -197,7 +180,7 @@ def main():
     election = Election(client, "/election", id)
     try:
         election.run(leader_func, id, client)
-    except ConnectionClosedError:
+    except (ConnectionClosedError, SessionExpiredError):
         pass
 
 
