@@ -10,7 +10,8 @@ from kazoo.recipe.election import Election
 from kazoo.recipe.watchers import DataWatch, ChildrenWatch
 from kazoo.recipe.barrier import Barrier
 from kazoo.recipe.counter import Counter
-from kazoo.exceptions import NoNodeError, ZookeeperError, NodeExistsError, ConnectionClosedError, SessionExpiredError
+from kazoo.exceptions import NodeExistsError
+from kazoo.protocol.states import KazooState
 
 
 
@@ -79,28 +80,21 @@ def leader_func(id: int, client: KazooClient):
         print(f"I'm the leader: (id = {id})")
         
         #Create the barrier
-        try:
-            client.retry(barrier.create)
-        except (NodeExistsError, ZookeeperError):
-            pass
-
+        barrier.create()
+        
         # Wait for devices to write measures
         time.sleep(SAMPLING_PERIOD)
 
-        children = client.retry(client.get_children, "/mediciones")
+        children = client.get_children("/mediciones")
         values = []
         for child in children:
             try:
-                data, _ = client.retry(client.get, f"/mediciones/{child}")
+                data, _ = client.get(f"mediciones/{child}")
                 values.append(float(data.decode('utf-8')))
             except (ValueError, TypeError):
                 print(f"ERROR: Invalid data format in node {child}")
-            except NoNodeError as e:
-                print("ERROR: get of a node that does not exist.")
-                print(e)
-            except ZookeeperError as e:
-                print("ERROR: the server returned a non-zero error code.")
-                print(e)
+            except Exception as e:
+                print(f"ERROR: node_{id} encountered the following error:\n{e}")
         
         if values:
             mean = sum(values) / len(values)
@@ -110,10 +104,8 @@ def leader_func(id: int, client: KazooClient):
             except requests.RequestException as e:
                 print(f"ERROR: Failed to contact API: {e}")
 
-        try:
-            client.retry(barrier.remove)
-        except (NoNodeError, ZookeeperError):
-            pass
+        # Remove the barrier so that other nodes can write
+        barrier.remove()
 
 
 def generate_random_measures(id: int, client: KazooClient):
@@ -127,18 +119,21 @@ def generate_random_measures(id: int, client: KazooClient):
     counter = Counter(client, "/counter")
 
     while True:
-        value = random.randint(75, 85)
-        path = f"/mediciones/{id}"
-        
         try:
-            client.retry(client.create, path, str(value).encode('utf-8'), ephemeral=True)
-        except NodeExistsError:
-            client.retry(client.set, path, str(value).encode('utf-8'))
+            value = random.randint(75, 85)
+            path = f"/mediciones/{id}"
+            
+            try:
+                client.create(path, str(value).encode('utf-8'), ephemeral=True)
+            except NodeExistsError:
+                client.set(path, str(value).encode('utf-8'))
 
-        counter += 1
-        print(f"Counter: {counter.value}")
+            counter += 1
+            print(f"Counter: {counter.value}")
 
-        barrier.wait()
+            barrier.wait(timeout=10)
+        except Exception as e:
+            print(f"ERROR in node {id}:\n {e}")
 
 
 
@@ -152,6 +147,18 @@ def main():
 
     # Connect to Zookeeper service
     client = KazooClient(hosts=ZOOKEEPER_HOSTS)
+    
+    
+    # Only for debugging purposes
+    def my_listener(state):
+        if state == KazooState.LOST:
+            print("!!! SESIÓN PERDIDA: El cliente ya no es líder y debe re-registrarse.")
+        elif state == KazooState.SUSPENDED:
+            print("??? CONEXIÓN INTERRUMPIDA: Buscando otros nodos del cluster...")
+        else:
+            print("--- CONEXIÓN ESTABLECIDA ---")
+    client.add_listener(my_listener)
+    
     client.start()
     
     
@@ -176,12 +183,17 @@ def main():
     measures_thread.start()
 
     
-    # Vote for a leader among all our app instances
-    election = Election(client, "/election", id)
-    try:
-        election.run(leader_func, id, client)
-    except (ConnectionClosedError, SessionExpiredError):
-        pass
+    while True:
+        # Vote for a leader among all our app instances
+        try:
+            print(f"Nodo {id} intentando entrar en la elección...")
+            election = Election(client, "/election", id)
+            
+            election.run(leader_func, id, client)
+            
+        except Exception as e:
+            print(f"Error durante la elección: {e}. Reintentando en 5s...")
+            time.sleep(5)
 
 
 if __name__ == "__main__":

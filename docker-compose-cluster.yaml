@@ -80,8 +80,9 @@ services:
       - zk-network
 
   practica3-1:
-    build: .
-    # image: carlosgg0/practica3:v2
+    # This image supports cluster mode
+    # and is uploaded to docker hub
+    image: carlosgg0/practica3:v2
     container_name: practica3-1
     depends_on:
       zookeeper1:
@@ -101,8 +102,7 @@ services:
       - zk-network
 
   practica3-2:
-    build: .
-    # image: carlosgg0/practica3:v2
+    image: carlosgg0/practica3:v2
     container_name: practica3-2
     depends_on:
       zookeeper1:
@@ -122,8 +122,7 @@ services:
       - zk-network
 
   practica3-3:
-    build: .
-    # image: carlosgg0/practica3:v2
+    image: carlosgg0/practica3:v2
     container_name: practica3-3
     depends_on:
       zookeeper1:

@@ -5,6 +5,7 @@
   ],
   numbering: "1",
 )
+#set par(justify:true)
 
 #set text(
   font: "New Computer Modern",
@@ -15,7 +16,7 @@
 
 // Switch to Cascadia Code for both
 // inline and block raw.
-#show raw: set text(font: "Cascadia Mono")
+#show raw: set text(font: "CaskaydiaCove NF")
 
 // Reset raw blocks to the same size as normal text,
 // but keep inline raw at the reduced size.
@@ -24,6 +25,8 @@
 #show title: set text(size: 17pt)
 #show title: set align(center)
 #show title: set block(below: 1.2em)
+
+#v(1fr)
 
 #title[
   Desarrollo de un sistema distribuido con Zookeeper
@@ -34,10 +37,12 @@
   Universidad de Málaga \
   #link("mailto:carlosgarciag552@uma.es")
 ]
-
+#v(2fr)
 #figure(
   image("images/logo-uma.jpeg")
 )
+
+#v(2fr)
 
 #pagebreak()
 
@@ -172,7 +177,10 @@ Se ha creado una imagen de Docker basada en `python:3.11-slim`. Caben destacar l
 - Se establece `ENV PYTHONUNBUFFERED=1` para asegurar que los logs de Python aparezcan inmediatamente en la consola de Docker.
 - Se define `ENTRYPOINT ["python", "src/app.py"]` para que el contenedor actúe como un ejecutable de nuestra aplicación, aceptando el ID como argumento.
 
-En la imagen @dockerfile se muestran los contenidos del dockerfile a partir del cual se ha construido la imagen `carlosgg0/practica3`, la cual se encuentra disponible en *Docker Hub*.
+En la imagen @dockerfile se muestran los contenidos del dockerfile a partir del cual se ha construido la imagen `carlosgg0/practica3`, la cual se encuentra disponible en *Docker Hub*. Cabe destacar que se han subido dos versiones para cubrir los distintos escenarios de la práctica:
+
+- `carlosgg0/practica3:v1`: Soporta correctamente ZooKeeper en modo *standalone* (nodo único).
+- `carlosgg0/practica3:v2`: Soporta ZooKeeper en modo *cluster* (múltiples hosts) y reconexión automática.
 
 #figure(
   image("images/dockerfile.png", width: 60%),
@@ -199,18 +207,31 @@ Se ha adaptado el código de la aplicación para aceptar una cadena de conexión
 Para verificar la robustez del sistema, se han realizado pruebas deteniendo nodos del clúster de ZooKeeper mientras la aplicación estaba en funcionamiento.
 
 === Estado Inicial
-El sistema arranca correctamente con los 3 nodos de ZooKeeper y las 3 instancias de la aplicación. Se elige un líder y se reportan mediciones.
+El sistema arranca correctamente con los 3 nodos de ZooKeeper y las 3 instancias de la aplicación. Se elige un líder y se reportan mediciones. Tal como se puede observar en @inicio.
 
 #figure(
-  image("images/inicio.png"),
+  image("images/initialization.png"),
   caption: [
     Inicio normal del sistema
   ]
-)
+) <inicio>
 
 === Prueba de tolerancia a fallos de infraestructura (zookeeper)
-Se detiene el contenedor que actúa como líder del ensamble de ZooKeeper (verificable con `zkServer.sh status`).
+Se detiene el contenedor que actúa como líder del ensamble de ZooKeeper (verificable con `zkServer.sh status`), en este caso el líder es el servicio `zookeeper2`. Por tanto, una vez ejecutado el comando ```bash docker stop zookeeper2``` podemos observar cómo los servicios de nuestra aplicación lo detectan y se conectan de nuevo recuperandose exitosamente del fallo del sistema, tal como se puede observar en la siguiente @recovery.
 
-*Resultado deseado*: `kazoo` debería detecta la pérdida de conexión y automáticamente migra la sesión a otro nodo disponible del clúster. La aplicación apenas sufre interrupción y continúa funcionando, demostrando la transparencia del fallo para el cliente.
+#figure(
+  image("images/recovery.png"),
+  caption: [
+    Inicio normal del sistema
+  ]
+) <recovery>
 
-Sin embargo, cuando se tumba el líder los nodos de nuestra aplicación automáticamente se 
+= Conclusiones
+
+El desarrollo de esta práctica ha demostrado los desafíos que presenta la coordinación de sistemas distribuidos y cómo herramientas como Apache ZooKeeper facilitan esta tarea.
+
+El sistema final es capaz de:
+- Sincronizar procesos mediante barreras distribuidas.
+- Gestionar configuraciones dinámicas en tiempo real sin reinicios (Watchers).
+- Mantener la consistencia de datos compartidos (contadores).
+- Tolerar fallos de infraestructura gracias al despliegue en clúster y al uso de librerías cliente (`kazoo`) que gestionan la reconexión transparente.
